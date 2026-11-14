@@ -1,0 +1,55 @@
+
+name: Reusable Config Workflow
+
+on:
+  workflow_call:
+    inputs:
+      app_id:
+        description: "GitHub App ID"
+        required: true
+        type: string
+    secrets:
+      CONFIG_APP_PRIVATE_KEY:
+        required: true
+
+jobs:
+  create-app-token:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # Step 1: Generate GitHub App Token
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ inputs.app_id }}
+          private-key: ${{ secrets.CONFIG_APP_PRIVATE_KEY }}
+          owner: Waleed-DTS-Abacus
+          repositories: lab-ccoe-configs
+          permission-contents: read
+
+      # Step 2: Checkout Configuration Repository
+      - name: Checkout Config Repository
+        uses: actions/checkout@v4
+        with:
+          repository: Waleed-DTS-Abacus/lab-ccoe-configs
+          token: ${{ steps.app-token.outputs.token }}
+          path: config
+          persist-credentials: false
+       
+      # Step 3: Verify Configuration File
+      - name: Verify Config File
+        shell: bash
+        run: |
+          echo "Checking configuration file..."
+
+          if [ -f "config/moj/config.json" ]; then
+            echo "SUCCESS: Configuration file found"
+            cat config/moj/config.json
+          else
+            echo "ERROR: Configuration file not found"
+            exit 1
+          fi
+
