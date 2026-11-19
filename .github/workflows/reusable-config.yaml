@@ -68,7 +68,7 @@ jobs:
 
           if [ -f "config/moj/config.json" ]; then
             echo "SUCCESS: Configuration file found"
-            cat config/moj/config.json
+            echo "PASS: Configuration file verified without exposing contents"
           else
             echo "ERROR: Configuration file not found"
             exit 1
