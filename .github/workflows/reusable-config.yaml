@@ -19,6 +19,27 @@ jobs:
       contents: read
 
     steps:
+      # Preflight: Validate GitHub App Credentials
+      - name: Validate GitHub App Configuration
+        shell: bash
+        env:
+          APP_ID: ${{ inputs.app_id }}
+          APP_PRIVATE_KEY: ${{ secrets.CONFIG_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$APP_ID" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: Missing or invalid GitHub App ID"
+            exit 1
+          fi
+
+          if [[ -z "$APP_PRIVATE_KEY" ]]; then
+            echo "ERROR: GitHub App Private Key is missing"
+            exit 1
+          fi
+
+          echo "PASS: GitHub App configuration validated"
+
       # Step 1: Generate GitHub App Token
       - name: Generate GitHub App Token
         id: app-token
