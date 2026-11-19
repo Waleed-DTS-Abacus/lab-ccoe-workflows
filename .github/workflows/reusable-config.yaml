@@ -1,11 +1,22 @@
-
-name: Reusable Config Workflow
+﻿name: Reusable Config Workflow
 
 on:
   workflow_call:
     inputs:
       app_id:
         description: "GitHub App ID"
+        required: true
+        type: string
+      config_owner:
+        description: "GitHub owner of configuration repository"
+        required: true
+        type: string
+      config_repo:
+        description: "Configuration repository name"
+        required: true
+        type: string
+      config_file_path:
+        description: "Path relative to configuration repository root"
         required: true
         type: string
     secrets:
@@ -19,12 +30,14 @@ jobs:
       contents: read
 
     steps:
-      # Preflight: Validate GitHub App Credentials
       - name: Validate GitHub App Configuration
         shell: bash
         env:
           APP_ID: ${{ inputs.app_id }}
           APP_PRIVATE_KEY: ${{ secrets.CONFIG_APP_PRIVATE_KEY }}
+          CONFIG_OWNER: ${{ inputs.config_owner }}
+          CONFIG_REPO: ${{ inputs.config_repo }}
+          CONFIG_FILE_PATH: ${{ inputs.config_file_path }}
         run: |
           set -euo pipefail
 
@@ -38,39 +51,53 @@ jobs:
             exit 1
           fi
 
+          if [[ ! "$CONFIG_OWNER" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
+            echo "ERROR: Invalid configuration owner"
+            exit 1
+          fi
+
+          if [[ ! "$CONFIG_REPO" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "ERROR: Invalid configuration repository"
+            exit 1
+          fi
+
+          if [[ ! "$CONFIG_FILE_PATH" =~ ^[A-Za-z0-9_./-]+$ ]] ||
+             [[ "$CONFIG_FILE_PATH" == /* ]] ||
+             [[ "$CONFIG_FILE_PATH" =~ (^|/)\.\.(/|$) ]]; then
+            echo "ERROR: Invalid configuration file path"
+            exit 1
+          fi
+
           echo "PASS: GitHub App configuration validated"
 
-      # Step 1: Generate GitHub App Token
       - name: Generate GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ inputs.app_id }}
           private-key: ${{ secrets.CONFIG_APP_PRIVATE_KEY }}
-          owner: Waleed-DTS-Abacus
-          repositories: lab-ccoe-configs
+          owner: ${{ inputs.config_owner }}
+          repositories: ${{ inputs.config_repo }}
           permission-contents: read
 
-      # Step 2: Checkout Configuration Repository
       - name: Checkout Config Repository
         uses: actions/checkout@v4
         with:
-          repository: Waleed-DTS-Abacus/lab-ccoe-configs
+          repository: ${{ inputs.config_owner }}/${{ inputs.config_repo }}
           token: ${{ steps.app-token.outputs.token }}
           path: config
           persist-credentials: false
-       
-      # Step 3: Verify Configuration File
+
       - name: Verify Config File
         shell: bash
+        env:
+          CONFIG_FILE_PATH: ${{ inputs.config_file_path }}
         run: |
-          echo "Checking configuration file..."
+          set -euo pipefail
 
-          if [ -f "config/moj/config.json" ]; then
-            echo "SUCCESS: Configuration file found"
+          if [[ -f "config/$CONFIG_FILE_PATH" ]]; then
             echo "PASS: Configuration file verified without exposing contents"
           else
             echo "ERROR: Configuration file not found"
             exit 1
           fi
-
