@@ -1,0 +1,54 @@
+name: Reusable API Proxy Validation
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-proxy:
+    name: Validate API Proxy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PSE Repository
+        uses: actions/checkout@v4
+
+      - name: Validate API Proxy Structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root = Path("api-proxies")
+
+          if not root.is_dir():
+              raise SystemExit("FAIL: api-proxies directory not found")
+
+          proxies = sorted(root.glob("*/apiproxy"))
+
+          if not proxies:
+              raise SystemExit("FAIL: No API Proxies found")
+
+          for proxy in proxies:
+              definitions = list(proxy.glob("*.xml"))
+
+              if not definitions:
+                  raise SystemExit(f"FAIL: Missing proxy definition: {proxy}")
+
+              for xml_file in proxy.rglob("*.xml"):
+                  ET.parse(xml_file)
+                  print(f"PASS: XML validated: {xml_file}")
+
+              for required_dir in ["policies", "proxies", "targets"]:
+                  if not (proxy / required_dir).is_dir():
+                      raise SystemExit(
+                          f"FAIL: Missing {required_dir}: {proxy}"
+                      )
+
+          print(f"API Proxy validation completed: {len(proxies)} proxy(s)")
+          PY

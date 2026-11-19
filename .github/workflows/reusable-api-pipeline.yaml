@@ -1,0 +1,127 @@
+
+name: Reusable API Pipeline - Unified Lab
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  context:
+    name: Detect Changed Files
+    runs-on: ubuntu-latest
+
+    outputs:
+      kvms_changed: ${{ steps.diff.outputs.kvms_changed }}
+      proxies_changed: ${{ steps.diff.outputs.proxies_changed }}
+
+    steps:
+      - name: Checkout PSE Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Detect KVM and Proxy Changes
+        id: diff
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "ERROR: This lab supports PR events only"
+            exit 1
+          fi
+
+          git fetch --no-tags origin "$BASE_REF"
+          BASE_COMMIT=$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")
+
+          CHANGED=$(git diff --name-only "$BASE_COMMIT" "$HEAD_SHA")
+
+          echo "Changed files:"
+          printf '%s\n' "$CHANGED"
+
+          KVM_CHANGED=false
+          PROXY_CHANGED=false
+
+          if grep -q '^env-configs/kvms/.*\.json$' <<< "$CHANGED"; then
+            KVM_CHANGED=true
+          fi
+
+          if grep -q '^api-proxies/' <<< "$CHANGED"; then
+            PROXY_CHANGED=true
+          fi
+
+          echo "kvms_changed=$KVM_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "proxies_changed=$PROXY_CHANGED" >> "$GITHUB_OUTPUT"
+
+          echo "KVM changed: $KVM_CHANGED"
+          echo "Proxy changed: $PROXY_CHANGED"
+
+  kvm-pipeline:
+    needs: context
+
+    if: >-
+      needs.context.result == 'success' &&
+      needs.context.outputs.kvms_changed == 'true'
+
+    uses: ./.github/workflows/reusable-kvm-pipeline.yaml
+
+    with:
+      resource_path: env-configs/kvms
+
+  proxy-pipeline:
+    needs:
+      - context
+      - kvm-pipeline
+
+    if: >-
+      always() &&
+      needs.context.result == 'success' &&
+      needs.context.outputs.proxies_changed == 'true' &&
+      !contains(fromJSON('["failure","cancelled"]'), needs.kvm-pipeline.result)
+
+    uses: ./.github/workflows/reusable-proxy-pipeline.yaml
+
+  pipeline-check:
+    name: Check Pipeline Result
+
+    needs:
+      - context
+      - kvm-pipeline
+      - proxy-pipeline
+
+    if: always()
+
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    steps:
+      - name: Validate Job Results
+        shell: bash
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const results = JSON.parse(process.env.JOB_RESULTS);
+          const required = new Set(['context']);
+
+          const failed = Object.entries(results).filter(([name, job]) => {
+            if (required.has(name)) {
+              return job.result !== 'success';
+            }
+            return !['success', 'skipped'].includes(job.result);
+          });
+
+          if (failed.length) {
+            console.error('Pipeline FAILED:', failed);
+            process.exit(1);
+          }
+
+          console.log('Pipeline PASSED');
+          NODE
