@@ -1,0 +1,4 @@
+owner,repo,branch,ruleset_name,enforcement,require_pr,required_approvals,block_force_push,block_deletion,required_status_check
+Waleed-DTS-Abacus,lab-moj-api,main,protect-main,active,true,0,true,true,promotion-check / validate-promotion
+Waleed-DTS-Abacus,lab-moj-api,moj-uat,protect-uat,active,true,0,true,true,promotion-check / validate-promotion
+Waleed-DTS-Abacus,lab-moj-api,moj,protect-prod,active,true,0,true,true,promotion-check / validate-promotion

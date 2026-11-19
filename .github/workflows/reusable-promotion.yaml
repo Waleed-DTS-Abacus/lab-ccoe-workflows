@@ -5,26 +5,30 @@ on:
   workflow_call:
     inputs:
       dev_branch:
-        description: Development branch
+        description: "Staging / development branch"
         required: true
         type: string
 
       uat_branch:
-        description: UAT branch
+        description: "User Acceptance Testing branch"
         required: true
         type: string
 
       prod_branch:
-        description: Production branch
+        description: "Production branch"
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   validate-promotion:
+    name: validate-promotion
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate Promotion Path
+      - name: Validate PR Promotion Route
         shell: bash
         env:
           SOURCE_BRANCH: ${{ github.head_ref }}
@@ -32,26 +36,50 @@ jobs:
           DEV_BRANCH: ${{ inputs.dev_branch }}
           UAT_BRANCH: ${{ inputs.uat_branch }}
           PROD_BRANCH: ${{ inputs.prod_branch }}
+
         run: |
           set -euo pipefail
 
-          echo "Source: $SOURCE_BRANCH"
-          echo "Target: $TARGET_BRANCH"
+          echo "Source branch: $SOURCE_BRANCH"
+          echo "Target branch: $TARGET_BRANCH"
 
+          # Ensure PR context
           if [[ -z "$SOURCE_BRANCH" || -z "$TARGET_BRANCH" ]]; then
-            echo "FAIL: Pull Request context is required"
+            echo "::error::Pull Request context is required"
             exit 1
           fi
 
-          if [[ "$TARGET_BRANCH" == "$UAT_BRANCH" &&
-                "$SOURCE_BRANCH" == "$DEV_BRANCH" ]]; then
-            echo "PASS: Development to UAT promotion allowed"
-
-          elif [[ "$TARGET_BRANCH" == "$PROD_BRANCH" &&
-                  "$SOURCE_BRANCH" == "$UAT_BRANCH" ]]; then
-            echo "PASS: UAT to Production promotion allowed"
-
-          else
-            echo "FAIL: Unauthorized promotion path"
+          # Validate branch configuration
+          if [[ -z "$DEV_BRANCH" || -z "$UAT_BRANCH" || -z "$PROD_BRANCH" ||
+                "$DEV_BRANCH" == "$UAT_BRANCH" ||
+                "$DEV_BRANCH" == "$PROD_BRANCH" ||
+                "$UAT_BRANCH" == "$PROD_BRANCH" ]]; then
+            echo "::error::Invalid branch configuration"
             exit 1
           fi
+
+          # UAT: only Development -> UAT
+          if [[ "$TARGET_BRANCH" == "$UAT_BRANCH" ]]; then
+            if [[ "$SOURCE_BRANCH" == "$DEV_BRANCH" ]]; then
+              echo "PASS: Development to UAT is allowed"
+              exit 0
+            fi
+
+            echo "::error::Only '$DEV_BRANCH' can promote to '$UAT_BRANCH'"
+            exit 1
+          fi
+
+          # Production: only UAT -> Production
+          if [[ "$TARGET_BRANCH" == "$PROD_BRANCH" ]]; then
+            if [[ "$SOURCE_BRANCH" == "$UAT_BRANCH" ]]; then
+              echo "PASS: UAT to Production is allowed"
+              exit 0
+            fi
+
+            echo "::error::Only '$UAT_BRANCH' can promote to '$PROD_BRANCH'"
+            exit 1
+          fi
+
+          # Development and non-governed branches
+          echo "PASS: Target branch is not UAT or Production"
+          exit 0
