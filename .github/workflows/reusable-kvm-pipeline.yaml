@@ -1,0 +1,64 @@
+name: Reusable KVM Validation
+
+on:
+  workflow_call:
+    inputs:
+      resource_path:
+        description: "KVM configuration directory"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-kvm:
+    name: Validate KVM JSON
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PSE Repository
+        uses: actions/checkout@v4
+
+      - name: Validate KVM Files
+        shell: bash
+        env:
+          RESOURCE_PATH: ${{ inputs.resource_path }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          base = Path(os.environ["RESOURCE_PATH"])
+
+          if base.is_absolute() or ".." in base.parts:
+              raise SystemExit("FAIL: Invalid resource path")
+
+          if not base.is_dir():
+              raise SystemExit(f"FAIL: Directory not found: {base}")
+
+          files = sorted(base.rglob("*.json"))
+
+          if not files:
+              raise SystemExit("FAIL: No KVM JSON files found")
+
+          for file in files:
+              with file.open(encoding="utf-8") as f:
+                  data = json.load(f)
+
+              if not isinstance(data, dict):
+                  raise SystemExit(f"FAIL: Invalid KVM object: {file}")
+
+              if not isinstance(data.get("name"), str) or not data["name"]:
+                  raise SystemExit(f"FAIL: Missing KVM name: {file}")
+
+              if not isinstance(data.get("keyValueEntries"), list):
+                  raise SystemExit(f"FAIL: Invalid keyValueEntries: {file}")
+
+              print(f"PASS: {file}")
+
+          print(f"KVM validation completed: {len(files)} file(s)")
+          PY
